@@ -1,0 +1,61 @@
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    padding: 16px;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: Arial, sans-serif;
+    background: linear-gradient(135deg, #111827, #273449);
+    color: white;
+}
+
+.card {
+    width: 100%;
+    max-width: 520px;
+    text-align: center;
+    padding: 40px 48px;
+    border-radius: 24px;
+    background: #ffffff12;
+}
+
+h1 { font-size: 42px; margin: 0 0 8px; }
+p { margin: 0 0 20px; }
+.muted { color: #b8c2d1; }
+a { color: #93c5fd; }
+label { color: #b8c2d1; }
+
+/* a row of controls: inputs, buttons, pull-downs */
+.controls {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+}
+
+/* a row of controls straight under a heading needs a little air */
+h1 + .controls { margin-top: 20px; }
+
+button, select, input, a.button {
+    font: inherit;
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: 1px solid #ffffff30;
+    background: #ffffff18;
+    color: white;
+    cursor: pointer;
+}
+input { cursor: text; }
+input::placeholder { color: #b8c2d1; }
+select option { color: #111827; }
+button:disabled, select:disabled { opacity: 0.45; cursor: not-allowed; }
+button:enabled:hover, a.button:hover { background: #ffffff30; }
+
+/* a link that looks like a button */
+a.button { display: inline-block; text-decoration: none; }
+a.button.primary { background: #2563eb; border-color: #3b82f6; }
+a.button.primary:hover { background: #1d4ed8; }

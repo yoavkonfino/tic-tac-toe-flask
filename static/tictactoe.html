@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tic-Tac-Toe</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+    :root { --cell: min(26vw, 96px); }
+    .board {
+        display: grid;
+        grid-template-columns: repeat(3, var(--cell));
+        gap: 8px;
+        justify-content: center;
+        margin: 0 auto 20px;
+    }
+    .cell {
+        width: var(--cell);
+        height: var(--cell);
+        padding: 0;
+        border-radius: 16px;
+        font-size: calc(var(--cell) * 0.5);
+        font-weight: bold;
+    }
+    .cell:disabled { opacity: 1; cursor: default; }
+    .cell.x { color: #93c5fd; }
+    .cell.o { color: #fbbf24; }
+    .cell.win { background: #16a34a; border-color: #4ade80; color: white; }
+    #status { min-height: 1.5em; font-size: 20px; margin: 0 0 16px; }
+    #status.error { color: #ff6b6b; }
+</style>
+</head>
+<body>
+<div class="card">
+    <h1>Tic-Tac-Toe</h1>
+    <p id="hint" class="muted"></p>
+    <div class="controls">
+        <button id="starter" type="button"></button>
+        <label>Agent
+            <select id="agent">
+                <option value="random" selected>Random</option>
+                <option value="qtable">Q-table (smart)</option>
+            </select>
+        </label>
+        <button id="newgame" type="button">New game</button>
+    </div>
+    <div class="board" id="board"></div>
+    <p id="status" role="status" aria-live="polite"></p>
+    <a href="/">Back home</a>
+</div>
+
+<script>
+(function () {
+    "use strict";
+
+    var EMPTY = "-";
+
+    var starterBtn = document.getElementById("starter");
+    var agentSel = document.getElementById("agent");
+    var newGameBtn = document.getElementById("newgame");
+    var hintEl = document.getElementById("hint");
+    var boardEl = document.getElementById("board");
+    var statusEl = document.getElementById("status");
+
+    // ---- state ----
+    var starter = "agent";            // the Who Starts toggle: "agent" or "human"
+    var phase = "idle";               // "idle", "playing" or "over"
+    var waiting = false;              // true while a request is open
+    var board = emptyBoard();         // array of 9: "X", "O" or "-"
+    var humanSymbol = "O";            // fixed when a game starts; the first player is X
+    var winLine = [];
+    var status = { text: "Press New game to start.", error: false };
+
+    function emptyBoard() {
+        return ["-", "-", "-", "-", "-", "-", "-", "-", "-"];
+    }
+
+    // ---- build the 9 cell buttons once ----
+    var cells = [];
+    for (var i = 0; i < 9; i++) {
+        (function (index) {
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "cell";
+            b.addEventListener("click", function () { onCell(index); });
+            boardEl.appendChild(b);
+            cells.push(b);
+        })(i);
+    }
+
+    function setStatus(text, isError) {
+        status = { text: text, error: !!isError };
+    }
+
+    // ---- draw everything from the state ----
+    function render() {
+        // Toggle, pull-down and New game: only when no game is in progress and not waiting.
+        var free = phase !== "playing" && !waiting;
+        starterBtn.textContent = "Who starts: " + (starter === "agent" ? "Agent" : "Human");
+        starterBtn.disabled = !free;
+        agentSel.disabled = !free;
+        newGameBtn.disabled = !free;
+
+        hintEl.textContent = starter === "human"
+            ? "You are X. The agent is O."
+            : "You are O. The agent is X.";
+
+        for (var i = 0; i < 9; i++) {
+            var v = board[i];
+            var c = cells[i];
+            c.textContent = v === EMPTY ? "" : v;
+            c.className = "cell" +
+                (v === "X" ? " x" : v === "O" ? " o" : "") +
+                (winLine.indexOf(i) !== -1 ? " win" : "");
+            c.disabled = !(phase === "playing" && !waiting && v === EMPTY);
+            c.setAttribute("aria-label", "Cell " + (i + 1) + (v === EMPTY ? ", empty" : ", " + v));
+        }
+
+        statusEl.textContent = status.text;
+        statusEl.className = status.error ? "error" : "";
+    }
+
+    // ---- talking to the server (POST /api/move) ----
+    // Returns {ok: true, data} or {ok: false, message}.
+    async function sendMove(boardString) {
+        var res;
+        try {
+            res = await fetch("/api/move", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ board: boardString, agent: agentSel.value })
+            });
+        } catch (e) {
+            return { ok: false, message: "Cannot reach the server." };
+        }
+
+        var data = null;
+        try { data = await res.json(); } catch (e) { data = null; }
+
+        if (!res.ok) {
+            var msg = data && typeof data.error === "string" ? data.error : "Server error.";
+            return { ok: false, message: msg };
+        }
+
+        var valid = data &&
+            typeof data.board === "string" && /^[XO-]{9}$/.test(data.board) &&
+            ["playing", "human_wins", "agent_wins", "draw"].indexOf(data.status) !== -1;
+        if (!valid) return { ok: false, message: "Server error." };
+
+        return { ok: true, data: data };
+    }
+
+    // ---- show a 200 answer ----
+    function applyResult(data) {
+        board = data.board.split("");
+        winLine = Array.isArray(data.winning_line) ? data.winning_line : [];
+        var messages = {
+            playing: "Your turn",
+            human_wins: "You win!",
+            agent_wins: "Agent wins!",
+            draw: "It's a draw!"
+        };
+        setStatus(messages[data.status], false);
+        phase = data.status === "playing" ? "playing" : "over";
+    }
+
+    // ---- New game ----
+    async function startGame() {
+        board = emptyBoard();
+        winLine = [];
+        humanSymbol = starter === "human" ? "X" : "O";
+        phase = "playing";
+
+        if (starter === "human") {
+            setStatus("Your turn", false);
+            render();
+            return;
+        }
+
+        // Agent starts: send the empty board and let the agent open.
+        waiting = true;
+        setStatus("Agent is thinking...", false);
+        render();
+        var r = await sendMove(board.join(""));
+        waiting = false;
+        if (r.ok) {
+            applyResult(r.data);
+        } else {
+            // The game never started: back to idle so New game can be pressed again.
+            phase = "idle";
+            board = emptyBoard();
+            setStatus(r.message, true);
+        }
+        render();
+    }
+
+    // ---- a click on a cell ----
+    async function onCell(i) {
+        if (phase !== "playing" || waiting || board[i] !== EMPTY) return;
+
+        var before = board.slice();
+        board[i] = humanSymbol;
+        waiting = true;
+        setStatus("Agent is thinking...", false);
+        render();
+
+        var r = await sendMove(board.join(""));
+        waiting = false;
+        if (r.ok) {
+            applyResult(r.data);
+        } else {
+            board = before;               // take the move back so you can try again
+            setStatus(r.message, true);
+        }
+        render();
+    }
+
+    // ---- controls ----
+    starterBtn.addEventListener("click", function () {
+        if (phase === "playing" || waiting) return;
+        starter = starter === "agent" ? "human" : "agent";
+        render();
+    });
+
+    newGameBtn.addEventListener("click", function () {
+        if (phase === "playing" || waiting) return;
+        startGame();
+    });
+
+    render();
+})();
+</script>
+</body>
+</html>
